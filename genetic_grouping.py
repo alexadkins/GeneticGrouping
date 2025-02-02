@@ -73,7 +73,7 @@ partner_weights = {
 # Algorithm values
 generations = 300          #Number of generations (preference of 1000 because I'm extra)
 population_size = 10       #Number of "classes" (populations) of groups
-attempts = 5               #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
+attempts = 10               #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
 
 
 
@@ -169,7 +169,7 @@ def genetic_algorithm(generations=100, pop_size=10):
 
         p_fitness = fitness(parents[0])
         if p_fitness > highest_fitness:
-            print(f"Best fitness updated at generation {i}: {p_fitness:.2f}")
+            print(f"Best fitness updated at generation {i}: {p_fitness:.2f}", flush=True)
             highest_fitness = p_fitness
         graph_data.append([i, p_fitness])
     
@@ -204,11 +204,13 @@ def output_groups_to_csv(groups, filename):
     df_output.to_csv(filename, index=False)
 
 
-for _ in range(attempts):
-    print("\n\n")
+for i in range(attempts):
+    highest_fitness = 0
+    # print("\n\n")
+    print(f"\nAttempt #{i+1}")
     best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
     best_groups_fitness = fitness(best_groups)
-    print(f"Final Fitness: {best_groups_fitness:.2f}")
+    print(f"Final Fitness: {best_groups_fitness:.2f}", flush=True)
     # output_groups_to_csv(best_groups, output_csv)
 
     output_filename = f"groups/{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"

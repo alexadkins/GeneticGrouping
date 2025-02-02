@@ -1,4 +1,4 @@
-For use with Qualtrics exported questionnaire data.
+For use with Qualtrics exported questionnaire data. Tested and developed with Python 3.10.0.
 
 ### Preparing the Data (csv file):
 - Mandatory column names: `name`
