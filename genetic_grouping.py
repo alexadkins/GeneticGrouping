@@ -2,20 +2,19 @@ import random, json
 import numpy as np
 import pandas as pd
 
+# CSV file names
 input_csv = "001_data.csv"
 output_csv = "001_groups.csv"
 
-# Load student data from CSV
+#Number of desired students per group
+group_size = 4          
+
+# Load student data from CSV - DO NOT EDIT
 students_df = pd.read_csv(input_csv)
 students = []
-
-generations = 100        #Number of generations
-population_size = 10    #Number of "classes" of groups
-group_size = 4          #Number of desired students per group
-
-
 graph_data = []
 
+# Desired student information from csv - remote unwanted metrics
 for _, row in students_df.iterrows():
     students.append({
         "name": row["name"],    #REQUIRED
@@ -33,7 +32,6 @@ for _, row in students_df.iterrows():
         "python": row["python"],
         "node": row["node"],
         "git": row["git"],
-        # KEEP PARTNER METRICS - not necessary for csv to contain them
         "primary_partner": row["primary_partner"] if pd.notna(row["primary_partner"]) else None,
         "additional_partners": row["additional_partners"].split(":") if pd.notna(row["additional_partners"]) else [],
         "avoid_partners": row["avoid_partners"].split(":") if pd.notna(row["avoid_partners"]) else []
@@ -72,8 +70,16 @@ partner_weights = {
     "avoid_partners": -20
 }
 
+# Algorithm values
+generations = 300          #Number of generations (preference of 1000 because I'm extra)
+population_size = 10       #Number of "classes" (populations) of groups
+attempts = 5               #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
 
-# STOP EDITING HERE
+
+
+# --- STOP EDITING HERE ---
+
+highest_fitness = 0
 
 num_groups = len(students) // group_size
 small_groups = 0
@@ -114,14 +120,22 @@ def fitness(groups):
     
     for group in groups:
         for s in group:
-            if s["primary_partner"] and s["primary_partner"] in [x["name"] for x in group]:
+            if "primary_partner" in s and s["primary_partner"] and s["primary_partner"] in [x["name"] for x in group]:
                 fitness_val += partner_weights["primary_partner"]
-            for ap in s["additional_partners"]:
-                if ap in [x["name"] for x in group]:
-                    fitness_val += partner_weights["additional_partners"]
-            for ap in s["avoid_partners"]:
-                if ap in [x["name"] for x in group]:
-                    fitness_val += partner_weights["avoid_partners"]
+            if "additional_partners" in s:
+                for ap in s["additional_partners"]:
+                    if ap in [x["name"] for x in group]:
+                        fitness_val += partner_weights["additional_partners"]
+            if "avoid_partners" in s:
+                for ap in s["avoid_partners"]:
+                    if ap in [x["name"] for x in group]:
+                        fitness_val += partner_weights["avoid_partners"]
+
+    # If testing whole population, not singular group:
+    if len(groups) > 1:
+        # Penalty for high variance in group fitness scores
+        fitness_stddev = np.std([fitness([group]) for group in groups])
+        fitness_val -= fitness_stddev
     
     return fitness_val
 
@@ -143,9 +157,10 @@ def mutate(groups):
     return new_groups
 
 def genetic_algorithm(generations=100, pop_size=10):
+    global highest_fitness
     population = initialize_population(pop_size)
     for i in range(generations):
-        # Keep top two parents; mutate them to create children
+        # Keep top n parents; mutate them to create children
         keep_n_parents = 2
         parents = sorted(population, key=fitness, reverse=True)[:keep_n_parents]
         children = [mutate(parents[i%keep_n_parents]) for i in range(keep_n_parents,pop_size-1)]
@@ -153,12 +168,14 @@ def genetic_algorithm(generations=100, pop_size=10):
         population = parents + children + wildcard
 
         p_fitness = fitness(parents[0])
-        print(f"Best fitness at generation {i}: {p_fitness:.2f}")
+        if p_fitness > highest_fitness:
+            print(f"Best fitness updated at generation {i}: {p_fitness:.2f}")
+            highest_fitness = p_fitness
         graph_data.append([i, p_fitness])
     
-    # Print final classroom metrics
-    for classroom in sorted(population, key=fitness, reverse=True):
-        print(f"Final population fitnesses: {fitness(classroom):.2f}")
+    # # Print final classroom metrics
+    # for classroom in sorted(population, key=fitness, reverse=True):
+    #     print(f"Final population fitnesses: {fitness(classroom):.2f}")
 
     # Return best fitted population
     return sorted(population, key=fitness, reverse=True)[0]
@@ -171,9 +188,10 @@ def output_groups_to_csv(groups, filename):
     weights = {metric: measures_weights[metric][0] for metric in measures_weights}
     output_data.append({
         "Group": "Weights:",
+        "Fitness": final_fitness,
         "name": f"{generations} gens, {population_size} pop",
         **partner_weights,
-        **weights, "Fitness": final_fitness})
+        **weights})
     
     for i, group in enumerate(groups):
         group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
@@ -186,18 +204,17 @@ def output_groups_to_csv(groups, filename):
     df_output.to_csv(filename, index=False)
 
 
-# TEMP: remove
-generations = 10        #Number of generations
-population_size = 10    #Number of "classes" of groups
+for _ in range(attempts):
+    print("\n\n")
+    best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
+    best_groups_fitness = fitness(best_groups)
+    print(f"Final Fitness: {best_groups_fitness:.2f}")
+    # output_groups_to_csv(best_groups, output_csv)
 
-best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
-best_groups_fitness = fitness(best_groups)
-print(f"Final Fitness: {best_groups_fitness:.2f}")
-# output_groups_to_csv(best_groups, output_csv)
+    output_filename = f"groups/{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"
+    print(f"Saving to {output_filename}")
+    output_groups_to_csv(best_groups, output_filename)
 
-output_filename = f"groups/{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"
-print(f"Saving to {output_filename}")
-output_groups_to_csv(best_groups, output_filename)
-
-df_output = pd.DataFrame(graph_data)
-df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
+    # # Output fitness per generation - for graphing purposes
+    # df_output = pd.DataFrame(graph_data)
+    # df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
