@@ -1,131 +1,206 @@
-import random, csv
+import random, json
 import numpy as np
+import pandas as pd
 
+input_csv = "001_data.csv"
+output_csv = "001_groups.csv"
+
+# Load student data from CSV
+students_df = pd.read_csv(input_csv)
 students = []
 
-with open('CPSC3720_001.csv') as f:
-    reader = csv.reader(f)
-    
-    for row in reader:        
-        student = {"id": row[0], 
-                   "partner": row[-1],
-                   "gpa": float(row[-2]),
-                   "ethic": float(row[-5]),
-                   "leadership": int(row[6]),
-                   "skills": [int(x) for x in row[1:11]]}
-        
-        students.append(student)
+generations = 100        #Number of generations
+population_size = 10    #Number of "classes" of groups
+group_size = 4          #Number of desired students per group
 
-# # Example student data structure
-# students = [
-#     {"id": 1, "gpa": 3.5, "ethic": 8, "skills": [7, 6, 5, 4, 8, 7, 6, 5, 4, 3], "leadership": 3, "partner": 2},
-#     {"id": 2, "gpa": 3.7, "ethic": 7, "skills": [6, 7, 8, 5, 6, 7, 8, 5, 6, 7], "leadership": 3, "partner": 1},
-#     {"id": 3, "gpa": 2.9, "ethic": 6, "skills": [5, 4, 3, 2, 5, 6, 7, 8, 9, 2], "leadership": 3, "partner": None},
-#     {"id": 4, "gpa": 3.2, "ethic": 9, "skills": [8, 7, 6, 5, 4, 3, 2, 1, 5, 6], "leadership": 3, "partner": None},
-#     {"id": 5, "gpa": 3.3, "ethic": 8, "skills": [7, 6, 5, 4, 3, 2, 1, 9, 8, 7], "leadership": 3, "partner": 6},
-#     {"id": 6, "gpa": 3.3, "ethic": 3, "skills": [7, 6, 5, 4, 3, 2, 1, 9, 8, 7], "leadership": 3, "partner": 5},
-#     {"id": 7, "gpa": 2.0, "ethic": 2, "skills": [7, 6, 5, 4, 3, 2, 1, 9, 8, 7], "leadership": 3, "partner": None},
-#     {"id": 8, "gpa": 4.0, "ethic": 2, "skills": [7, 6, 5, 4, 3, 2, 1, 9, 8, 7], "leadership": 3, "partner": None},
-    
-#     # Add more students as needed
-# ]
 
-group_size = 4  # Adjust as needed
+graph_data = []
+
+for _, row in students_df.iterrows():
+    students.append({
+        "name": row["name"],    #REQUIRED
+        "gpa": row["gpa"],
+        "leadership": row["leadership"],
+        "time_mgt": row["time_mgt"],
+        "skills_total": row["skills_total"],
+        "agile": row["agile"],
+        "postman": row["postman"],
+        "json_yaml": row["json_yaml"],
+        "apis": row["apis"],
+        "aws": row["aws"],
+        "lambda": row["lambda"],
+        "javascript": row["javascript"],
+        "python": row["python"],
+        "node": row["node"],
+        "git": row["git"],
+        # KEEP PARTNER METRICS - not necessary for csv to contain them
+        "primary_partner": row["primary_partner"] if pd.notna(row["primary_partner"]) else None,
+        "additional_partners": row["additional_partners"].split(":") if pd.notna(row["additional_partners"]) else [],
+        "avoid_partners": row["avoid_partners"].split(":") if pd.notna(row["avoid_partners"]) else []
+    })
+
+
+# "within" and "between"
+#   Within to weigh within a group (e.g. time mgt for members of the group)
+#   Between to weigh between groups (e.g. team's total skill avg across all teams)
+
+# Negative values for low standard deviation (balanced distribution)
+#   between/within groups should have similar avg numbers, e.g. GPA (between), time_mgt (within))
+# Positive values for high standard devation (diverse distribution)
+#   between/within groups should have different numbers, e.g. ?? (between), individual skills (within))
+measures_weights = {
+    "gpa": [-5, "between"],
+    "leadership": [-3, "between"],
+    "time_mgt": [-3, "within"],
+    "skills_total": [-3, "between"],
+    "agile": [1, "within"],
+    "postman": [1, "within"],
+    "json_yaml": [1, "within"],
+    "apis": [1, "within"],
+    "aws": [1, "within"],
+    "lambda": [1, "within"],
+    "javascript": [1, "within"],
+    "python": [1, "within"],
+    "node": [1, "within"],
+    "git": [1, "within"]
+}
+
+# Do not delete
+partner_weights = {
+    "primary": 15,
+    "additional": 3,
+    "avoid": -20
+}
+
+
+# STOP EDITING HERE
+
 num_groups = len(students) // group_size
-skills_quant = 10
+small_groups = 0
 
-# Factor weights
-gpa_weight = 5
-ethic_weight = 3
-leadership_weight = 2
-skill_within_weight = 1
-skill_between_weight = 1
-partner_weight = 10
+if len(students) % group_size != 0:
+    num_groups += 1
+    small_groups = group_size - len(students) % group_size
 
+def print_json(json_obj: dict):
+    print(json.dumps(json_obj, indent=2))
 
+def split_into_groups(students):
+    groups = []
+    for i in range(0, (num_groups-small_groups)*group_size, group_size):
+        groups.append(students[i:i+group_size])
+    for i in range((num_groups-small_groups)*group_size, len(students), group_size-1):
+        groups.append(students[i:i+group_size-1])
+    return groups
+
+# Create n classrooms of groups for population
 def initialize_population(pop_size=10):
     population = []
     for _ in range(pop_size):
         shuffled = students[:]
         random.shuffle(shuffled)
-        groups = [shuffled[i:i+group_size] for i in range(0, len(shuffled), group_size)]
+        groups = split_into_groups(shuffled)
         population.append(groups)
     return population
 
-def fitness(groups, desc_output=False):
-    gpa_stddev = np.std([np.mean([s["gpa"] for s in group]) for group in groups])
-    ethic_stddev = np.mean([np.std([s["ethic"] for s in group]) for group in groups])
-    leadership_stddev = np.mean([np.std([s["leadership"] for s in group]) for group in groups])
-    skill_stddev_within = np.mean([np.mean([np.std([s["skills"][i] for s in group]) for i in range(skills_quant)]) for group in groups])
-    skill_stddev_between = np.std([np.mean([s["skills"][i] for s in group]) for i in range(skills_quant) for group in groups])
-    # partner_bonus = sum(1 for group in groups for s in group if s.get("partner") in [x["id"] for x in group])
-    partner_bonus = sum([1 for group in groups for s in group if s["partner"] in [x["id"] for x in group]])
-        
-    # Higher fitness is better
-    fitness_val = (
-        - (gpa_stddev * gpa_weight)
-        - (ethic_stddev * ethic_weight)
-        - (leadership_stddev * leadership_weight)
-        + (skill_stddev_within * skill_within_weight)
-        - (skill_stddev_between * skill_between_weight)
-        + (partner_bonus * partner_weight)
-    )
+def fitness(groups):
+    fitness_val = 0
+    for metric, (weight, metric_type) in measures_weights.items():
+        if metric_type == "between":
+            stddev = np.std([np.mean([s[metric] for s in group]) for group in groups])
+        else:
+            stddev = np.mean([np.std([s[metric] for s in group]) for group in groups])
+        fitness_val += weight * stddev
     
-    if desc_output:
-        print("\n")
-        print("Groups: ")
-        for group in groups:
-            print(f"{[s['id'] for s in group]}")
-        
-        print(f"GPA STD: {gpa_stddev:0.3f}, Ethic STD: {ethic_stddev:0.3f} Partner Bonus: {partner_bonus:0.3f}")
-        print(f"Skill STDW: {skill_stddev_within:0.3f}, Skill STDB: {skill_stddev_between:0.3f} ")
-        print(f"GPA Weighted: \t\t{-(gpa_stddev * gpa_weight):.2f}")
-        print(f"Ethic Weighted: \t{-(ethic_stddev * ethic_weight):.2f}")
-        print(f"Leadership Weighted: \t{-(leadership_stddev * leadership_weight):.2f}")
-        print(f"Partner Weighted: \t{(partner_bonus * partner_weight):.2f}")
-        print(f"Skills Within: \t\t{-(skill_stddev_within * skill_within_weight):.2f}")
-        print(f"Skills Between: \t{(skill_stddev_between * skill_between_weight):.2f}")
-        print(f"Fitness: ", fitness_val)
-        
+    for group in groups:
+        for s in group:
+            if s["primary_partner"] and s["primary_partner"] in [x["name"] for x in group]:
+                fitness_val += partner_weights["primary"]
+            for ap in s["additional_partners"]:
+                if ap in [x["name"] for x in group]:
+                    fitness_val += partner_weights["additional"]
+            for ap in s["avoid_partners"]:
+                if ap in [x["name"] for x in group]:
+                    fitness_val += partner_weights["avoid"]
+    
     return fitness_val
 
-def select_parents(population):
-    # print("\n\n--NEW POP--")
-    
-    # for pop in sorted(population, key=fitness, reverse=True)[:2]:
-    #     fitness(pop, True)
-        # print(pop)
-    return sorted(population, key=fitness, reverse=True)[:2]
-
-def crossover(parent1, parent2):
-    all_students = list({s["id"]: s for group in parent1 + parent2 for s in group}.values())  # Ensure uniqueness
-    random.shuffle(all_students)
-    child = [all_students[i:i+group_size] for i in range(0, len(all_students), group_size)]
-    return child if len(child) == num_groups else parent1  # Ensure valid group count
-
 def mutate(groups):
-    if random.random() < 0.2:  # 20% mutation chance
-        flat_students = list({s["id"]: s for group in groups for s in group}.values())  # Ensure uniqueness
-        random.shuffle(flat_students)
-        new_groups = [flat_students[i:i+group_size] for i in range(0, len(flat_students), group_size)]
-        return new_groups if len(new_groups) == num_groups else groups
-    return groups
+    # Get ordered student list from parent
+    flat_students = list({s["name"]: s for group in groups for s in group}.values())
+    
+    # Randomly swap some students in parent to create new child
+    mutation_level = random.random()
+    swaps = int(mutation_level * len(flat_students))
+    for _ in range(swaps):
+        s1 = random.randint(0,len(flat_students)-1)
+        s2 = random.randint(0,len(flat_students)-1)
+        flat_students[s1], flat_students[s2] = flat_students[s2], flat_students[s1]
 
-def genetic_algorithm(generations=1000, pop_size=num_groups):
+    # Split students back into groups with proper sizes
+    new_groups = split_into_groups(flat_students)
+
+    return new_groups
+
+def genetic_algorithm(generations=100, pop_size=10):
     population = initialize_population(pop_size)
-    for _ in range(generations):
-        parents = select_parents(population)
-        children = [crossover(*parents) for _ in range(pop_size - len(parents))]
-        population = parents + [mutate(child) for child in children]
+    for i in range(generations):
+        # Keep top half of parents; mutate them to create children
+        parents = sorted(population, key=fitness, reverse=True)[:(pop_size//2)]
+        children = [mutate(parent) for parent in parents]
+        population = parents + children
+
+        p_fitness = fitness(parents[0])
+        print(f"Best fitness at generation {i}: {p_fitness:.2f}")
+        graph_data.append([i, p_fitness])
+    
+    # Print final classroom metrics
+    for classroom in sorted(population, key=fitness, reverse=True):
+        print(f"Final population fitnesses: {fitness(classroom):.2f}")
+
+    # Return best fitted population
     return sorted(population, key=fitness, reverse=True)[0]
 
 
+# FOR CONNIE
+# def output_groups_to_csv(groups, filename):
+#     output_data = []
+#     for i, group in enumerate(groups):
+#         group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
+#         fitness_score = fitness([group])
+#         output_data.append({"Group": i+1, "Group Fitness": fitness_score, "name":"", **group_metrics})
+#         for student in group:
+#             output_data.append({"Group": i+1, **student})
+#         output_data.append({})
+#     df_output = pd.DataFrame(output_data)
+#     df_output.to_csv(filename, index=False)
 
-if __name__ == "__main__":
-    best_groups = genetic_algorithm()
-    # fitness(best_groups, True)
-    for i, group in enumerate(best_groups):
-        print(f"Group {i+1}: {[s['id'] for s in group]}")
-        # print(f"\tGPA Average: {np.mean([s['gpa'] for s in group])}")
-        # print(f"\t\t GPAs: {[s['gpa'] for s in group]}")
-        # print(f"\tEthic Average: {np.mean([s['ethic'] for s in group])}")
+
+def output_groups_to_csv(groups, filename):
+    output_data = []
+    for i, group in enumerate(groups):
+        group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
+        fitness_score = fitness([group])
+        output_data.append({"Group": i+1, **group_metrics, "Group Fitness": fitness_score})
+        for student in group:
+            output_data.append({"Group": i+1, **student})
+        output_data.append({})
+    df_output = pd.DataFrame(output_data)
+    df_output.to_csv(filename, index=False)
+
+
+# TEMP: remove
+generations = 1000        #Number of generations
+population_size = 10    #Number of "classes" of groups
+
+best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
+best_groups_fitness = fitness(best_groups)
+print(f"Final Fitness: {best_groups_fitness:.2f}")
+# output_groups_to_csv(best_groups, output_csv)
+
+output_filename = f"{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"
+print(f"Saving to {output_filename}")
+output_groups_to_csv(best_groups, output_filename)
+
+df_output = pd.DataFrame(graph_data)
+df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
