@@ -1,10 +1,11 @@
 import random, json
 import numpy as np
 import pandas as pd
+from multiprocessing import Pool
 
 # CSV file names
-input_csv = "001_data.csv"
-output_csv = "001_groups.csv"
+input_csv = "002_data.csv"
+output_csv = "002_groups.csv"
 
 #Number of desired students per group
 group_size = 4          
@@ -36,6 +37,8 @@ for _, row in students_df.iterrows():
         "additional_partners": row["additional_partners"].split(":") if pd.notna(row["additional_partners"]) else [],
         "avoid_partners": row["avoid_partners"].split(":") if pd.notna(row["avoid_partners"]) else []
     })
+
+    # df.to_dict(orient="records").fillna({"primary_partner": None, ...})
 
 
 # "within" and "between"
@@ -71,11 +74,14 @@ partner_weights = {
 }
 
 # Algorithm values
-generations = 300        #Number of generations (preference of 1000 because I'm extra)
+generations = 100        #Number of generations (preference of 1000 because I'm extra)
 population_size = 10       #Number of "classes" (populations) of groups
 attempts = 10              #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
 
-
+# Run controls
+parallelism = True     # Run all attempts in parallel with multiprocessing (DO NOT USE WITH PROGRESS)
+progress = False        # Report run progress with fitness updates (DO NOT USE WITH PARALLELISM)
+graph = False            # Generate fitness over generation data for graphing
 
 # --- STOP EDITING HERE ---
 
@@ -97,6 +103,7 @@ def split_into_groups(students):
         groups.append(students[i:i+group_size])
     for i in range((num_groups-small_groups)*group_size, len(students), group_size-1):
         groups.append(students[i:i+group_size-1])
+
     return groups
 
 # Create n classrooms of groups for population
@@ -112,6 +119,7 @@ def initialize_population(pop_size=10):
 def fitness(groups, exclude_partners = False):
     fitness_val = 0
     # stddev = (np.std if metric_type == "between" else np.mean)([(np.mean if metric_type == "between" else np.std)([s[metric] for s in group]) for group in groups])
+    # getattr(np, "mean" if metric_type == "between" else "std")
 
     for metric, (weight, metric_type) in measures_weights.items():
         if metric_type == "between":
@@ -190,27 +198,31 @@ def genetic_algorithm(generations=100, pop_size=10):
         wildcard = initialize_population(1)     #Wildcard random generated class
         population = parents + children + wildcard
 
-        # For outputting highest found fitness 
-        p_fitness = fitness(parents[0])
-        if p_fitness > highest_fitness:
-            print(f"Best fitness updated at generation {gen}: {p_fitness:.2f}", flush=True)
-            highest_fitness = p_fitness
+        if graph or progress:
+            # For outputting highest found fitness 
+            p_fitness = fitness(parents[0])
+
+            if progress:
+                if p_fitness > highest_fitness:
+                    print(f"Best fitness updated at generation {gen}: {p_fitness:.2f}", flush=True)
+                    highest_fitness = p_fitness
         
-        # # For graphing highest fitness per generation
-        # graph_data.append([gen, p_fitness])
+            if graph:
+                # For graphing highest fitness per generation
+                graph_data.append([gen, p_fitness])
     
-    # # Print final classroom/population metrics
-    # for classroom in sorted(population, key=fitness, reverse=True):
-    #     print(f"Final population fitnesses: {fitness(classroom):.2f}")
+    if progress:
+        # Print final classroom/population metrics
+        for classroom in sorted(population, key=fitness, reverse=True):
+            print(f"Final population fitnesses: {fitness(classroom):.2f}")
 
     # Return best fitted population
     return sorted(population, key=fitness, reverse=True)[0]
 
-
 def output_groups_to_csv(groups, filename):
     output_data = []
     
-    final_fitness = fitness(best_groups)
+    final_fitness = fitness(groups)
     weights = {metric: measures_weights[metric][0] for metric in measures_weights}
     output_data.append({
         "Group": "Weights:",
@@ -230,22 +242,30 @@ def output_groups_to_csv(groups, filename):
     df_output = pd.DataFrame(output_data)
     df_output.to_csv(filename, index=False)
 
-
-for i in range(attempts):
+def run_attempt(attempt_id):
+    global highest_fitness
     highest_fitness = 0
-    # print("\n\n")
-    print(f"\nAttempt #{i+1}")
+    
     best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
     best_groups_fitness = fitness(best_groups)
-    print(f"Final Fitness: {best_groups_fitness:.2f}", flush=True)
-    # output_groups_to_csv(best_groups, output_csv)
 
     output_filename = f"groups/{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"
-    print(f"Saving to {output_filename}")
+
+    print(f"""\nAttempt #{attempt_id+1}\n\tFinal Fitness: {best_groups_fitness:.2f}\n\tSaving to {output_filename}""", flush=True)
+
     output_groups_to_csv(best_groups, output_filename)
 
-    # # Output fitness per generation - for graphing purposes
-    # df_output = pd.DataFrame(graph_data)
-    # graph_data = []
-    # df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
+    # Output fitness per generation - for graphing purposes
+    global graph_data
+    df_output = pd.DataFrame(graph_data)
+    graph_data = []
+    df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
 
+if __name__ == "__main__":
+    if parallelism:
+        with Pool(processes=attempts) as pool:
+            pool.map(run_attempt, range(attempts))
+        
+    else:
+        for i in range(attempts):
+            run_attempt(i)
