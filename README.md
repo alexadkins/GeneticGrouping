@@ -22,8 +22,6 @@ For use with Qualtrics exported questionnaire data.
 #### Extracting Student Data
 - Adjust student dictionary key/values to match csv headers. Remove unwanted metrics.
 - `name` is required
-- Keep partner metric parameters - not required in CSV
-  - (Script will ignore empty metrics)
  
 #### Setting Weights
 - Ensure weight keys match student metrics. Remove unwanted metrics.
@@ -32,7 +30,7 @@ For use with Qualtrics exported questionnaire data.
   - Positive weights encourage high variance
   - `between` evaluates weights across groups
   - `within` evaluates weights within individual groups
-- Keep `partner_weights` (again, not required in CSV)
+- Keep `partner_weights` (not required in input CSV, will show up as empty in output CSV)
 
 #### Adjusting the Algorithm (optional)
 - Set `generations` to number of generations to run. Improvements are negligable after ~300
