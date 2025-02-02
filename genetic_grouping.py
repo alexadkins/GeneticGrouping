@@ -47,8 +47,8 @@ for _, row in students_df.iterrows():
 # Positive values for high standard devation (diverse distribution)
 #   between/within groups should have different numbers, e.g. ?? (between), individual skills (within))
 measures_weights = {
-    "gpa": [-5, "between"],
-    "leadership": [-3, "between"],
+    "gpa": [-6, "between"],
+    "leadership": [-4, "between"],
     "time_mgt": [-3, "within"],
     "skills_total": [-3, "between"],
     "agile": [1, "within"],
@@ -65,15 +65,15 @@ measures_weights = {
 
 # Do not delete
 partner_weights = {
-    "primary_partner": 15,
+    "primary_partner": 20,
     "additional_partners": 3,
     "avoid_partners": -20
 }
 
 # Algorithm values
-generations = 300          #Number of generations (preference of 1000 because I'm extra)
+generations = 300        #Number of generations (preference of 1000 because I'm extra)
 population_size = 10       #Number of "classes" (populations) of groups
-attempts = 10               #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
+attempts = 10              #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
 
 
 
@@ -109,14 +109,25 @@ def initialize_population(pop_size=10):
         population.append(groups)
     return population
 
-def fitness(groups):
+def fitness(groups, exclude_partners = False):
     fitness_val = 0
+    # stddev = (np.std if metric_type == "between" else np.mean)([(np.mean if metric_type == "between" else np.std)([s[metric] for s in group]) for group in groups])
+
     for metric, (weight, metric_type) in measures_weights.items():
         if metric_type == "between":
             stddev = np.std([np.mean([s[metric] for s in group]) for group in groups])
         else:
             stddev = np.mean([np.std([s[metric] for s in group]) for group in groups])
         fitness_val += weight * stddev
+
+    # If testing whole population, not singular group:
+    if len(groups) > 1:
+        # Penalty for high variance in group fitness scores - ignores partners
+        fitness_stddev = np.std([fitness([group], exclude_partners=True) for group in groups])
+        fitness_val -= fitness_stddev 
+
+    if exclude_partners:
+        return fitness_val
     
     for group in groups:
         for s in group:
@@ -131,12 +142,6 @@ def fitness(groups):
                     if ap in [x["name"] for x in group]:
                         fitness_val += partner_weights["avoid_partners"]
 
-    # If testing whole population, not singular group:
-    if len(groups) > 1:
-        # Penalty for high variance in group fitness scores
-        fitness_stddev = np.std([fitness([group]) for group in groups])
-        fitness_val -= fitness_stddev
-    
     return fitness_val
 
 def mutate(groups):
@@ -161,19 +166,40 @@ def genetic_algorithm(generations=100, pop_size=10):
     population = initialize_population(pop_size)
     for i in range(generations):
         # Keep top n parents; mutate them to create children
-        keep_n_parents = 2
-        parents = sorted(population, key=fitness, reverse=True)[:keep_n_parents]
+        keep_n_parents = 3
+        # parents = sorted(population, key=fitness, reverse=True)[:keep_n_parents]
+
+        parents = sorted(population, key=fitness, reverse=True)
+        top_parents = [parents[0]]
+
+        # Ignore duplicate parents
+        i = 1
+        while len(top_parents) < keep_n_parents and i < len(parents):
+            if parents[i] not in top_parents:
+                top_parents.append(parents[i])
+            i += 1
+
+        # Unless there are too many duplicates
+        if len(top_parents) != keep_n_parents:
+            parents = sorted(population, key=fitness, reverse=True)[:keep_n_parents]
+        else:
+            parents = top_parents
+
+        # Mutate children. Add one completely random wildcard.
         children = [mutate(parents[i%keep_n_parents]) for i in range(keep_n_parents,pop_size-1)]
         wildcard = initialize_population(1)     #Wildcard random generated class
         population = parents + children + wildcard
 
+        # For outputting highest found fitness 
         p_fitness = fitness(parents[0])
         if p_fitness > highest_fitness:
             print(f"Best fitness updated at generation {i}: {p_fitness:.2f}", flush=True)
             highest_fitness = p_fitness
-        graph_data.append([i, p_fitness])
+        
+        # # For graphing highest fitness per generation
+        # graph_data.append([i, p_fitness])
     
-    # # Print final classroom metrics
+    # # Print final classroom/population metrics
     # for classroom in sorted(population, key=fitness, reverse=True):
     #     print(f"Final population fitnesses: {fitness(classroom):.2f}")
 
@@ -196,7 +222,8 @@ def output_groups_to_csv(groups, filename):
     for i, group in enumerate(groups):
         group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
         fitness_score = fitness([group])
-        output_data.append({"Group": i+1, **group_metrics, "Fitness": fitness_score})
+        fitness_score_sans_partners = fitness([group], exclude_partners=True)
+        output_data.append({"Group": i+1, **group_metrics, "Fitness": f"{fitness_score, fitness_score_sans_partners}"})
         for student in group:
             output_data.append({"Group": i+1, **student})
         output_data.append({})
@@ -219,4 +246,6 @@ for i in range(attempts):
 
     # # Output fitness per generation - for graphing purposes
     # df_output = pd.DataFrame(graph_data)
+    # graph_data = []
     # df_output.to_csv(output_filename.split(".csv")[0]+"_graph.csv", index=False)
+

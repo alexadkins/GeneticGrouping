@@ -39,5 +39,5 @@ For use with Qualtrics exported questionnaire data. Tested and developed with Py
 ## Understanding the Output
 - Group csv(s) will be output to `groups/` subdirectory.
 - Population fitness & weights on 2nd row
-- Groups are listed with their singular fitnessess and mean metric values
+- Groups are listed with their fitness (including then excluding partner weights) and mean metric values
 - Group members are listed under each group header
