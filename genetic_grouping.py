@@ -164,7 +164,7 @@ def mutate(groups):
 def genetic_algorithm(generations=100, pop_size=10):
     global highest_fitness
     population = initialize_population(pop_size)
-    for i in range(generations):
+    for gen in range(generations):
         # Keep top n parents; mutate them to create children
         keep_n_parents = 3
         # parents = sorted(population, key=fitness, reverse=True)[:keep_n_parents]
@@ -193,11 +193,11 @@ def genetic_algorithm(generations=100, pop_size=10):
         # For outputting highest found fitness 
         p_fitness = fitness(parents[0])
         if p_fitness > highest_fitness:
-            print(f"Best fitness updated at generation {i}: {p_fitness:.2f}", flush=True)
+            print(f"Best fitness updated at generation {gen}: {p_fitness:.2f}", flush=True)
             highest_fitness = p_fitness
         
         # # For graphing highest fitness per generation
-        # graph_data.append([i, p_fitness])
+        # graph_data.append([gen, p_fitness])
     
     # # Print final classroom/population metrics
     # for classroom in sorted(population, key=fitness, reverse=True):
