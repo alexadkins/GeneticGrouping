@@ -15,7 +15,7 @@ For use with Qualtrics exported questionnaire data. Tested and developed with Py
 - Set `input_csv` to prepared data file name
   - Ensure data file is in same directory as script, or set to full path
 - Set `output_csv` to desired output root file name
-  - Generated group csvs default to groups/ folder
+  - Generated group csvs default to `groups/` folder
   - Generated file names include number of generations and final population fitness
 - Set `group_size` to desired team size
 
@@ -25,7 +25,7 @@ For use with Qualtrics exported questionnaire data. Tested and developed with Py
  
 #### Setting Weights
 - Ensure weight keys match student metrics. Remove unwanted metrics.
-- Ensure wegiht values are in `[weight(int), "between/within"(str)` format.
+- Ensure weight values are in `[weight(int), "between/within"(str)` format.
   - Negative weights encourage low variance
   - Positive weights encourage high variance
   - `between` evaluates weights across groups
