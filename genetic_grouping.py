@@ -4,11 +4,11 @@ import pandas as pd
 from multiprocessing import Pool
 
 # CSV file names
-input_csv = "002_data.csv"
-output_csv = "002_groups.csv"
+input_csv = "s26_data.csv"
+output_csv = "2_s26_groups_lowergrpweights_v2.csv"
 
 #Number of desired students per group
-group_size = 4          
+group_size = 4
 
 # Load student data from CSV - DO NOT EDIT
 students_df = pd.read_csv(input_csv)
@@ -21,6 +21,7 @@ for _, row in students_df.iterrows():
         "name": row["name"],    #REQUIRED
         "gpa": row["gpa"],
         "leadership": row["leadership"],
+        "leadership2": row["leadership"],
         "time_mgt": row["time_mgt"],
         "skills_total": row["skills_total"],
         "agile": row["agile"],
@@ -50,8 +51,9 @@ for _, row in students_df.iterrows():
 # Positive values for high standard devation (diverse distribution)
 #   between/within groups should have different numbers, e.g. ?? (between), individual skills (within))
 measures_weights = {
-    "gpa": [-6, "between"],
+    "gpa": [0, "between"],
     "leadership": [-4, "between"],
+    "leadership2": [4, "within"],
     "time_mgt": [-3, "within"],
     "skills_total": [-3, "between"],
     "agile": [1, "within"],
@@ -68,20 +70,20 @@ measures_weights = {
 
 # Do not delete
 partner_weights = {
-    "primary_partner": 20,
+    "primary_partner": 10,
     "additional_partners": 3,
     "avoid_partners": -20
 }
 
 # Algorithm values
-generations = 100        #Number of generations (preference of 1000 because I'm extra)
+generations = 1000        #Number of generations (preference of 1000 because I'm extra)
 population_size = 10       #Number of "classes" (populations) of groups
 attempts = 10              #Number of times to re-run generation and produce output (preference of 10 because I'm extra)
 
 # Run controls
-parallelism = True     # Run all attempts in parallel with multiprocessing (DO NOT USE WITH PROGRESS)
-progress = False        # Report run progress with fitness updates (DO NOT USE WITH PARALLELISM)
-graph = False            # Generate fitness over generation data for graphing
+parallelism = True              # Run all attempts in parallel with multiprocessing (DO NOT USE WITH PROGRESS)
+progress = not parallelism      # Report run progress with fitness updates (DO NOT USE WITH PARALLELISM)
+graph = True                    # Generate fitness over generation data for graphing
 
 # --- STOP EDITING HERE ---
 
@@ -233,8 +235,8 @@ def output_groups_to_csv(groups, filename):
     
     for i, group in enumerate(groups):
         group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
-        fitness_score = fitness([group])
-        fitness_score_sans_partners = fitness([group], exclude_partners=True)
+        fitness_score = float(fitness([group]))
+        fitness_score_sans_partners = float(fitness([group], exclude_partners=True))
         output_data.append({"Group": i+1, **group_metrics, "Fitness": f"{fitness_score, fitness_score_sans_partners}"})
         for student in group:
             output_data.append({"Group": i+1, **student})
