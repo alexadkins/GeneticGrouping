@@ -1,4 +1,6 @@
 *.csv
+.DS_Store
+TODO_F26_survey_changes.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -4,11 +4,38 @@ import pandas as pd
 from multiprocessing import Pool
 
 # CSV file names
-input_csv = "002_data.csv"
-output_csv = "002_groups.csv"
+input_csv = "3720F26SurveyData_prepared.csv"
+output_csv = "3720F26_groups.csv"
 
 #Number of desired students per group
 group_size = 4          
+
+# Weekly availability: 4 time blocks (Morning/Early Afternoon/Late Afternoon/Evening)
+# x 7 days (Sun-Sat) = 28 possible slots. Prepared CSV holds one column per time
+# block (availability_1..4), each a comma-separated list of free days.
+AVAILABILITY_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+AVAILABILITY_BLOCKS = 4
+NUM_AVAILABILITY_SLOTS = AVAILABILITY_BLOCKS * len(AVAILABILITY_DAYS)
+
+def parse_availability(row):
+    slots = set()
+    for block in range(AVAILABILITY_BLOCKS):
+        val = row[f"availability_{block + 1}"]
+        if pd.notna(val) and val:
+            for day in val.split(","):
+                day = day.strip()
+                if day in AVAILABILITY_DAYS:
+                    slots.add(block * len(AVAILABILITY_DAYS) + AVAILABILITY_DAYS.index(day))
+    return slots
+
+AVAILABILITY_BLOCK_LABELS = ["Morning", "Early Afternoon", "Late Afternoon", "Evening"]
+
+def format_availability(slots):
+    by_block = {}
+    for slot in sorted(slots):
+        block, day = divmod(slot, len(AVAILABILITY_DAYS))
+        by_block.setdefault(AVAILABILITY_BLOCK_LABELS[block], []).append(AVAILABILITY_DAYS[day])
+    return "; ".join(f"{block}: {','.join(days)}" for block, days in by_block.items())
 
 # Load student data from CSV - DO NOT EDIT
 students_df = pd.read_csv(input_csv)
@@ -33,6 +60,9 @@ for _, row in students_df.iterrows():
         "python": row["python"],
         "node": row["node"],
         "git": row["git"],
+        "databases": row["databases"],
+        "presentation": row["presentation"],
+        "availability": parse_availability(row),
         "primary_partner": row["primary_partner"] if pd.notna(row["primary_partner"]) else None,
         "additional_partners": row["additional_partners"].split(":") if pd.notna(row["additional_partners"]) else [],
         "avoid_partners": row["avoid_partners"].split(":") if pd.notna(row["avoid_partners"]) else []
@@ -63,7 +93,9 @@ measures_weights = {
     "javascript": [1, "within"],
     "python": [1, "within"],
     "node": [1, "within"],
-    "git": [1, "within"]
+    "git": [1, "within"],
+    "databases": [1, "within"],
+    "presentation": [1, "within"]
 }
 
 # Do not delete
@@ -72,6 +104,12 @@ partner_weights = {
     "additional_partners": 3,
     "avoid_partners": -20
 }
+
+# Availability overlap is a coverage metric (count of shared free slots), not a
+# between/within variance metric, so it doesn't fit measures_weights - it gets
+# its own weight here. Positive = more group-wide overlap is rewarded. No hard
+# penalty for zero-overlap groups; they simply score 0 on this term.
+availability_weight = 1
 
 # Algorithm values
 generations = 100        #Number of generations (preference of 1000 because I'm extra)
@@ -127,6 +165,12 @@ def fitness(groups, exclude_partners = False):
         else:
             stddev = np.mean([np.std([s[metric] for s in group]) for group in groups])
         fitness_val += weight * stddev
+
+    # Availability overlap bonus: for each group, count weekly time slots where
+    # every member is free, and reward more shared availability.
+    for group in groups:
+        overlap = sum(all(slot in s["availability"] for s in group) for slot in range(NUM_AVAILABILITY_SLOTS))
+        fitness_val += availability_weight * overlap
 
     # If testing whole population, not singular group:
     if len(groups) > 1:
@@ -235,9 +279,10 @@ def output_groups_to_csv(groups, filename):
         group_metrics = {metric: np.mean([s[metric] for s in group]) for metric in measures_weights}
         fitness_score = fitness([group])
         fitness_score_sans_partners = fitness([group], exclude_partners=True)
-        output_data.append({"Group": i+1, **group_metrics, "Fitness": f"{fitness_score, fitness_score_sans_partners}"})
+        shared_slots = sum(all(slot in s["availability"] for s in group) for slot in range(NUM_AVAILABILITY_SLOTS))
+        output_data.append({"Group": i+1, **group_metrics, "Fitness": f"{fitness_score, fitness_score_sans_partners}", "shared_availability_slots": shared_slots})
         for student in group:
-            output_data.append({"Group": i+1, **student})
+            output_data.append({"Group": i+1, **{**student, "availability": format_availability(student["availability"])}})
         output_data.append({})
     df_output = pd.DataFrame(output_data)
     df_output.to_csv(filename, index=False)
