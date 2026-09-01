@@ -142,6 +142,7 @@ for _, row in students_df.iterrows():
         "name": row["name"],    #REQUIRED
         "gpa": row["gpa"],
         "leadership": row["leadership"],
+        "leadership2": row["leadership"],
         "time_mgt": row["time_mgt"],
         "submission_time": row["submission_time"],
         "skills_total": row["skills_total"],
