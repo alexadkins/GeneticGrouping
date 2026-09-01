@@ -6,6 +6,20 @@ TODO_F26_survey_changes.md
 # only the scrubbed CPSC3720_Project_Skill_Survey_TEMPLATE.qsf is tracked.
 3720_F26_Project_Skill_Survey.qsf
 
+# Generated per-semester outputs (contain student names/team assignments) -
+# the scripts that produce these are tracked, their output isn't. The blank
+# room-layout template (3720RoomLayout.png, no suffix) is NOT matched by
+# these and stays tracked.
+*.pdf
+*_labeled*.png
+*_names.png
+*.xlsx
+3720F26_TeamOptions_Comparison.html
+
+# Real student names for the current semester's minimal-change pull options
+# and table-seating constraints - kept out of tracked scripts entirely.
+local_semester_config.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

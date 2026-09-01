@@ -29,6 +29,11 @@ scripts with `uv run python <script>.py` from the project root.
    first - see below)
 5. Group assignments land in `groups/`, one CSV per attempt (`attempts`
    controls how many independent attempts run).
+6. **Optional: pair teams for shared tables.** If you set
+   `enforce_even_teams = True` (below) so every team can be paired with
+   another - e.g. for shared tables or cross-team activities - run
+   `uv run python pair_teams.py groups/<file>.csv` on your chosen attempt to
+   find the best pairing. See "Pairing teams for shared tables" below.
 
 ## Preparing the data (`prepare_data.py`)
 
@@ -78,6 +83,11 @@ only touch the config block above it.
   Generated group CSVs go to `groups/`, named with generation count and
   final fitness.
 - `group_size` - desired team size.
+- `enforce_even_teams` - if `True`, rounds the team count up by one whenever
+  it would otherwise be odd (e.g. so every team can be paired with another
+  for shared tables/activities - see `pair_teams.py` below). Never exceeds
+  `group_size` for any team; the extra team absorbs students by making some
+  teams one smaller instead.
 - `generations`/`population_size`/`attempts` - algorithm tuning.
   Improvements often continue well past a couple hundred generations,
   especially at low `population_size`; check convergence for your class size
@@ -136,6 +146,38 @@ same "diversify within a team" idea already used for the skill sliders).
   days = 28 possible) where every team member is free. A standalone fitness
   term, not part of `measures_weights`, since it's a coverage metric rather
   than a variance one.
+
+## Pairing teams for shared tables (optional: `pair_teams.py`)
+
+If you're seating two teams together per table or activity (using
+`enforce_even_teams` above to get an even team count), `pair_teams.py` finds
+the best way to pair up the teams a grouping run produced. It's entirely
+optional - nothing else in the pipeline calls it, and it only makes sense on
+top of an already-finished group CSV.
+
+- `best_pairing(teams)` - exhaustively searches every way to pair up all
+  teams, scoring each pairing the same way individual partner preferences
+  are scored (rank-weighted, reciprocity-aware, `avoid_partners` as a
+  penalty), just applied across team boundaries instead of within one.
+  Requires an even number of teams. Note: if the class size is odd, no
+  pairing can match every pair by team size (it's mathematically forced - an
+  odd headcount split into an even number of same-size-ish teams always
+  leaves an odd count of each size), so the search minimizes mixed-size
+  pairs first and maximizes preference score as the tiebreaker.
+- `assign_tables(teams, best_matching, score_of, ...)` - optionally assigns
+  each pair to a physical table. `TABLE_PRIORITY` at the top of the file
+  (edit per semester/room) is an ordered list of table labels, most-spacious
+  first; larger pairs claim earlier entries. If it's ever shorter than the
+  number of pairs needed, generic fallback labels are generated
+  automatically, so this stays correct for any class size even if you
+  forget to update it. Optional `hard_seats`/`allowed_seats` arguments let
+  you pin specific students' pairs to specific tables - keep any real names
+  for these in your own local, gitignored file (same idea as keeping raw
+  survey data out of tracked files elsewhere in this pipeline), not
+  hardcoded into the script.
+- Run directly (`uv run python pair_teams.py groups/<file>.csv`) to print a
+  pairing to the console, or import `best_pairing`/`assign_tables` for
+  custom reporting.
 
 ## Understanding the output
 

@@ -1,4 +1,4 @@
-import random, json
+import random, json, math
 import numpy as np
 import pandas as pd
 from multiprocessing import Pool
@@ -9,6 +9,13 @@ output_csv = "3720F26_groups.csv"
 
 #Number of desired students per group
 group_size = 4
+
+# If True, round the team count up by one whenever it would otherwise be odd
+# (e.g. for pairing teams up at tables, cross-team activities, etc.). Never
+# exceeds group_size for any team - the extra team absorbs students by making
+# some teams one smaller instead, same as the existing uneven-class-size
+# handling below.
+enforce_even_teams = True
 
 # Algorithm values
 # Tuned against this class's real data (49 students): fitness was still
@@ -200,12 +207,16 @@ def format_preferred_partners(student):
 # the picked student has you anywhere in their own preferred list).
 students_by_name = {s["name"]: s for s in students}
 
-num_groups = len(students) // group_size
-small_groups = 0
-
-if len(students) % group_size != 0:
+num_groups = math.ceil(len(students) / group_size)
+if enforce_even_teams and num_groups % 2 != 0:
     num_groups += 1
-    small_groups = group_size - len(students) % group_size
+
+# Team sizes distributed as evenly as possible across num_groups teams -
+# num_extra_large teams get one extra member, the rest get group_base_size.
+# Generalizes the old fixed group_size/group_size-1 split to handle
+# enforce_even_teams bumping num_groups up (which can otherwise require a
+# split of more than 1 member between team sizes).
+group_base_size, num_extra_large = divmod(len(students), num_groups)
 
 def print_json(json_obj: dict):
     print(json.dumps(json_obj, indent=2))
@@ -261,10 +272,11 @@ def enforce_avoid_constraints(groups, max_attempts=1000):
 
 def split_into_groups(students):
     groups = []
-    for i in range(0, (num_groups-small_groups)*group_size, group_size):
-        groups.append(students[i:i+group_size])
-    for i in range((num_groups-small_groups)*group_size, len(students), group_size-1):
-        groups.append(students[i:i+group_size-1])
+    idx = 0
+    for i in range(num_groups):
+        size = group_base_size + 1 if i < num_extra_large else group_base_size
+        groups.append(students[idx:idx + size])
+        idx += size
 
     return enforce_avoid_constraints(groups)
 
