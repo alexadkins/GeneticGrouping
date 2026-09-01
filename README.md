@@ -35,6 +35,67 @@ scripts with `uv run python <script>.py` from the project root.
    `uv run python pair_teams.py groups/<file>.csv` on your chosen attempt to
    find the best pairing. See "Pairing teams for shared tables" below.
 
+## How it works (priority order)
+
+This pipeline makes a sequence of decisions, each one layered strictly on
+top of the last. A higher-priority stage is fully decided before the next
+stage even starts - a lower-priority stage never gets to trade away a
+higher-priority one's quality to improve its own.
+
+- **Priority 0 - data prep (`prepare_data.py`).** Not really a "priority" so
+  much as a prerequisite: turns the raw survey export into the clean,
+  numeric CSV everything else reads. Nothing downstream can be better than
+  the data it's given here.
+
+- **Priority 1 - team composition (`genetic_grouping.py`).** The core
+  decision: which students end up on which team. This is what the genetic
+  algorithm actually optimizes, and it's the most important stage by far -
+  everything else in this pipeline just arranges the outcome of this step.
+  - **How the algorithm works, in plain terms:** start with many random ways
+    to split the class into teams (a "population"). Score each one with a
+    single number (`fitness()`) that blends every factor below. Keep the
+    best few, throw the rest away, and create new candidates by randomly
+    reshuffling students within copies of the survivors ("mutation") - like
+    breeding the next generation from the fittest parents. Repeat for many
+    generations; the best score climbs as weaker candidates get replaced by
+    refinements of stronger ones. Several independent attempts run in
+    parallel, since each one can land in a different result - keep whichever
+    scores highest.
+  - **What's inside that single fitness score:**
+    - **Hard constraint, absolute:** `avoid_partners` - never violated. Every
+      candidate is actively repaired each generation if it breaks this, no
+      matter what score it would otherwise have gotten.
+    - **Soft factors, all blended into one number by their configured
+      weights** (none of these has its own fixed priority over the others -
+      only the weight you give it matters): GPA/skill/leadership/
+      time-management/submission-timing balance (`measures_weights`),
+      partner preferences (`partner_rank_weights`, reciprocity), and
+      availability overlap (`availability_weight`).
+
+- **Priority 2 - team pairing (optional, `pair_teams.py`).** Only relevant
+  if `enforce_even_teams = True` was used. Takes the *winning* team
+  composition from Priority 1 as fixed and final, and only then decides
+  which two teams sit together - it never reopens or trades off team
+  composition to get a better pairing. Scored the same way as partner
+  preferences above (rank-weighted, reciprocity-aware), just applied to
+  whole teams instead of individual students. Every possible pairing is
+  checked exhaustively (not another genetic algorithm) - the search space
+  here is far smaller than team composition, so an exact answer is
+  affordable.
+
+- **Priority 3 - table assignment (part of `pair_teams.py`).** Only relevant
+  once teams are already paired. Assigns each pair to a specific table,
+  honoring any fixed/restricted seat rules first, then favoring larger pairs
+  for the room's more spacious tables (see `assign_tables()`). Purely a
+  seating/logistics decision - has zero influence on team composition or
+  pairing, and vice versa.
+
+- **Beyond this repo.** Physical room diagrams, printable table tents,
+  roster spreadsheets, and LMS (e.g. Canvas) team creation all happen after
+  everything above - manual, semester-specific steps that consume whatever
+  team+table assignment came out of this process, not automated by this
+  repo's committed scripts.
+
 ## Preparing the data (`prepare_data.py`)
 
 Converts the raw Qualtrics export into the clean CSV `genetic_grouping.py`
@@ -95,6 +156,19 @@ only touch the config block above it.
   parallel (`parallelism = True`), one per CPU core - matching `attempts` to
   your core count uses one parallel wave, no wasted time.
 - `progress`/`graph` - optional per-generation console output / fitness CSV.
+
+#### Why mutation, not "crossover"
+The other classic genetic-algorithm technique - splicing two candidates'
+groups together (crossover) - was tested for this pipeline and rejected: it
+made results measurably worse, not better. The reason is `fitness()`
+includes *between-team* comparisons (e.g. "is GPA balanced across every team
+in the class"), so a team that looked great in one candidate was only great
+in the context of that candidate's *other* teams - transplanting it whole
+into a different candidate's teams breaks the very balance that made it
+good in the first place. A good grouping here is a property of the whole
+classroom at once, not of any one team in isolation, so mutation (which
+always reshuffles within one coherent whole classroom) fits this problem;
+crossover doesn't.
 
 #### `measures_weights` - GPA, skills, and other numeric metrics
 Each metric maps to a **list** of `[weight, type]` pairs, not just one - most
