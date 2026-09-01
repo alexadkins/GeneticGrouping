@@ -2,6 +2,10 @@
 .DS_Store
 TODO_F26_survey_changes.md
 
+# Semester-specific survey export with real student names/choices baked in -
+# only the scrubbed CPSC3720_Project_Skill_Survey_TEMPLATE.qsf is tracked.
+3720_F26_Project_Skill_Survey.qsf
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
