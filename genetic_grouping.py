@@ -336,13 +336,26 @@ def fitness(groups, exclude_partners = False):
 
     return fitness_val
 
-def mutate(groups):
+def mutate(groups, max_swaps=None):
     # Get ordered student list from parent
     flat_students = list({s["name"]: s for group in groups for s in group}.values())
-    
-    # Randomly swap some students in parent to create new child
-    mutation_level = random.random()
-    swaps = int(mutation_level * len(flat_students))
+
+    # Randomly swap some students in parent to create new child. `max_swaps`
+    # bounds how many swaps happen: None (default) is the original "coarse"
+    # behavior - a random level averaging ~half the class swapped per
+    # mutation, good for broad exploration from scratch. Pass a small int
+    # (e.g. 1-3) for a "fine" local-search neighbor operator instead - one
+    # that explores close to an existing solution rather than always jumping
+    # far away from it (coarse mutation can never do fine local refinement:
+    # seeding the population with an already-strong grouping and running
+    # coarse-only mutation for 1000 generations produced zero improvement in
+    # testing, since every mutation just jumps somewhere unrelated).
+    if max_swaps is None:
+        mutation_level = random.random()
+        swaps = int(mutation_level * len(flat_students))
+    else:
+        swaps = random.randint(1, max_swaps)
+
     for _ in range(swaps):
         s1 = random.randint(0,len(flat_students)-1)
         s2 = random.randint(0,len(flat_students)-1)
@@ -353,9 +366,18 @@ def mutate(groups):
 
     return new_groups
 
-def genetic_algorithm(generations=100, pop_size=10):
+def genetic_algorithm(generations=100, pop_size=10, mutation_mode="coarse", fine_max_swaps=3,
+                       initial_population=None):
+    """mutation_mode: "coarse" (default, original behavior - broad random
+    swaps, good for exploring from scratch), "fine" (small bounded swaps
+    only - local search near an existing solution), or "annealed" (starts
+    coarse, shifts toward fine as generations progress - broad exploration
+    early, local refinement late). `initial_population` seeds generation 0
+    with a specific population instead of pure-random groupings (e.g. to
+    refine an already-strong known grouping) - defaults to the normal random
+    start if not given."""
     global highest_fitness
-    population = initialize_population(pop_size)
+    population = initial_population if initial_population is not None else initialize_population(pop_size)
     for gen in range(generations):
         # Keep top n parents; mutate them to create children
         keep_n_parents = 3
@@ -378,7 +400,18 @@ def genetic_algorithm(generations=100, pop_size=10):
             parents = top_parents
 
         # Mutate children. Add one completely random wildcard.
-        children = [mutate(parents[i%keep_n_parents]) for i in range(keep_n_parents,pop_size-1)]
+        if mutation_mode == "fine":
+            make_child = lambda parent: mutate(parent, max_swaps=fine_max_swaps)
+        elif mutation_mode == "annealed":
+            # Probability of a fine (vs coarse) mutation grows from 0 to 1
+            # over the run - broad exploration early, local refinement late.
+            fine_probability = gen / generations
+            make_child = lambda parent: (mutate(parent, max_swaps=fine_max_swaps)
+                                          if random.random() < fine_probability else mutate(parent))
+        else:
+            make_child = mutate
+
+        children = [make_child(parents[i%keep_n_parents]) for i in range(keep_n_parents,pop_size-1)]
         wildcard = initialize_population(1)     #Wildcard random generated class
         population = parents + children + wildcard
 
