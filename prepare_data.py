@@ -1,22 +1,6 @@
 import pandas as pd
 
-# Raw Qualtrics export (3 header rows: field names, question text, ImportId JSON) - DO NOT EDIT
-raw_csv = "3720F26SurveyData.csv"
-prepared_csv = "3720F26SurveyData_prepared.csv"
-
-# Qualtrics "expertise" slider order (QID7_1..13) -> student dict keys
-EXPERTISE_FIELDS = [
-    "agile", "postman", "json_yaml", "apis", "aws", "lambda",
-    "databases", "javascript", "python", "node", "git",
-    "leadership", "presentation",
-]
-
-# Skill sliders rolled into the "skills_total" between-group balance metric.
-# Leadership and presentation are soft skills, weighted separately - excluded here.
-SKILLS_TOTAL_FIELDS = [
-    "agile", "postman", "json_yaml", "apis", "aws", "lambda",
-    "databases", "javascript", "python", "node", "git",
-]
+import config as cfg  # raw_csv, prepared_csv, EXPERTISE_FIELDS, SKILLS_TOTAL_FIELDS - see config.py
 
 TIME_MGT_SCALE = {"Strongly Disagree": 1, "Disagree": 2, "Neutral": 3, "Agree": 4, "Strongly Agree": 5}
 
@@ -81,7 +65,7 @@ def parse_ranked_names(field):
 
 
 def main():
-    df = pd.read_csv(raw_csv, header=0, skiprows=[1, 2])
+    df = pd.read_csv(cfg.raw_csv, header=0, skiprows=[1, 2])
     df = resolve_duplicates(df)
 
     out = pd.DataFrame()
@@ -98,10 +82,10 @@ def main():
     end_dates = pd.to_datetime(df["EndDate"])
     out["submission_time"] = (end_dates - end_dates.min()).dt.total_seconds() / 3600
 
-    for i, field in enumerate(EXPERTISE_FIELDS, start=1):
+    for i, field in enumerate(cfg.EXPERTISE_FIELDS, start=1):
         out[field] = pd.to_numeric(df[f"expertise_{i}"])
 
-    out["skills_total"] = out[SKILLS_TOTAL_FIELDS].sum(axis=1)
+    out["skills_total"] = out[cfg.SKILLS_TOTAL_FIELDS].sum(axis=1)
 
     for block in range(1, 5):
         out[f"availability_{block}"] = df[f"availability_{block}"]
@@ -121,8 +105,8 @@ def main():
     out["additional_partners"] = [":".join(names[1:]) or None for names in preferred]
     out["avoid_partners"] = [":".join(names) or None for names in avoid]
 
-    out.to_csv(prepared_csv, index=False)
-    print(f"Wrote {len(out)} students to {prepared_csv}")
+    out.to_csv(cfg.prepared_csv, index=False)
+    print(f"Wrote {len(out)} students to {cfg.prepared_csv}")
 
 
 if __name__ == "__main__":

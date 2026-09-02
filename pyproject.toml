@@ -1,7 +1,10 @@
 [project]
 name = "groupsml"
 version = "0.1.0"
-requires-python = ">=3.14.7"
+description = "Genetic-algorithm team formation from a Qualtrics skill/preference survey"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.11.1",
     "numpy>=2.5.2",

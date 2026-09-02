@@ -4,18 +4,7 @@ from itertools import combinations
 
 sys.path.insert(0, ".")
 import genetic_grouping as g
-
-# --- EDIT PER SEMESTER: room/table layout ---
-# Ordered list of table identifiers, from most spacious/preferred for larger
-# team-pairs down to least preferred (e.g. a room's corners and open tables
-# first, cramped or awkward ones last). Only the order matters - however
-# many tiers or however irregular the actual room shape is, just rank them.
-# Must have at least as many entries as there will be team-pairs. Update
-# this whenever the class meets somewhere new; nothing else in this file
-# needs to change.
-# Current room (3720RoomLayout.png): A, C, F, H are corners (most open);
-# B, E, G are mid-wall edges; D is the sole fully-interior table.
-TABLE_PRIORITY = ["A", "C", "F", "H", "B", "E", "G", "D"]
+import config as cfg  # TABLE_PRIORITY - see config.py ("EDIT PER SEMESTER" section)
 
 rank_limit = len(g.partner_rank_weights)
 one_sided_credit = 0 if g.strict_reciprocity else g.one_sided_partner_credit
@@ -140,7 +129,7 @@ def _padded_table_priority(table_priority, needed):
     extra = [f"Table {i}" for i in range(len(table_priority) + 1, needed + 1)]
     return list(table_priority) + extra
 
-def assign_tables(teams, best_matching, score_of, table_priority=TABLE_PRIORITY,
+def assign_tables(teams, best_matching, score_of, table_priority=cfg.TABLE_PRIORITY,
                    hard_seats=None, allowed_seats=None):
     """Assign each team-pair to one of the tables in `table_priority` (auto-
     extended with generic labels if it's shorter than the number of pairs -
