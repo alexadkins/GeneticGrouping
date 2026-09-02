@@ -172,24 +172,46 @@ only touch the config block above it.
   `"fine"` (small bounded swaps only - local search near an existing
   solution), or `"annealed"` (starts coarse, shifts toward fine as
   generations progress - broad exploration early, local refinement late).
-  Default `"annealed"`: tested directly against `"coarse"` on this class's
-  real data under identical settings (10 attempts each, same
-  generations/pop_size, no polish) and won on every measure - best fitness
-  87.85 vs. 84.97, mean 86.47 vs. 80.11, worst 84.30 vs. 73.97.
+  Default `"annealed"`.
 - `polish` - if `True` (default), runs `exhaustive_local_search()` on each
   attempt's final result: checks *every* possible 2-student swap between
   every pair of teams (not a random sample, an exhaustive one), and keeps
   applying whichever improves fitness the most until none do. Cheap
   (seconds - the swap neighborhood for a class this size is only ~1000
   possibilities) and can only help or do nothing, so there's essentially no
-  downside to leaving it on. It also means a separate, much more expensive
-  dedicated "fine" refinement stage isn't needed - a direct 9-attempts-each
-  comparison (both configurations polished) found `"annealed"` alone beat
-  `"annealed"` + a 300-generation `"fine"` stage on every measure (best
-  88.87 vs. 88.76, mean 87.41 vs. 86.70, worst 86.26 vs. 84.42) while taking
-  40% less time per attempt. `staged_genetic_algorithm(stages, ...)` is
-  available for chaining multiple GA phases with different `mutation_mode`s
-  if you want to experiment further (each stage's winner seeds the next).
+  downside to leaving it on.
+
+**Methodology comparison** (this class's real data, same `generations`/
+`population_size` throughout - "attempts" is how many independent runs each
+row is averaged over, since run-to-run variance is real and worth seeing):
+
+| Approach | Attempts | Best | Mean | Worst |
+|---|---|---|---|---|
+| `"coarse"` (from scratch) | 10 | 84.97 | 80.11 | 73.97 |
+| `"fine"` (from scratch) | 3 | 86.06 | 85.02 | 83.80 |
+| `"annealed"` (from scratch) | 10 | 87.85 | 86.47 | 84.30 |
+| `"annealed"` + `"fine"` (300 gens) + polish | 9 | 88.76 | 86.70 | 84.42 |
+| **`"annealed"` + polish** (current default) | 9 | **88.87** | **87.41** | **86.26** |
+
+Two separate findings drove the current default:
+1. **`"annealed"` beats `"coarse"` from scratch, decisively** - better on
+   every measure, and far more *consistent* (worst-case 84.30 vs. 73.97 -
+   annealed's worst attempt is nearly as good as coarse's best ever was).
+2. **Polish makes a dedicated `"fine"` stage unnecessary.** `"annealed"` +
+   polish beats `"annealed"` + a 300-generation `"fine"` stage on every
+   measure, while taking 40% less time per attempt - so skip the extra
+   stage.
+
+A related, separate test: seeding the population with an already-strong
+grouping (instead of starting from scratch) and running 1000 generations of
+`"coarse"` mutation produced **zero improvement in every attempt** - every
+mutation jumped too far to refine anything. The same test with `"fine"`
+mutation improved the seed in most attempts (by up to +2.4 fitness), because
+its small step size can actually explore *near* a good solution instead of
+always jumping away from it. `staged_genetic_algorithm(stages, ...)` is
+available for chaining multiple GA phases with different `mutation_mode`s,
+or seeding from a known grouping, if you want to experiment further (each
+stage's winner seeds the next).
 
 #### Why mutation, not "crossover"
 The other classic genetic-algorithm technique - splicing two candidates'
@@ -286,6 +308,16 @@ top of an already-finished group CSV.
 - Run directly (`uv run python pair_teams.py groups/<file>.csv`) to print a
   pairing to the console, or import `best_pairing`/`assign_tables` for
   custom reporting.
+
+**The highest team-composition fitness isn't always the highest combined
+score once pairing is added.** `genetic_grouping.py` only optimizes
+within-team fitness; cross-team pairing potential is a separate quantity,
+evaluated afterward, that isn't part of what any single attempt is
+searching for. Two attempts with very similar team fitness can have
+noticeably different pairing scores depending on incidental details of
+*which* students ended up on which team - so if pairing matters to you,
+compare `fitness + pairing_score` across your top few attempts rather than
+assuming the single highest-fitness one will also pair the best.
 
 ## Understanding the output
 
