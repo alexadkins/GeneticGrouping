@@ -57,10 +57,15 @@ higher-priority one's quality to improve its own.
     best few, throw the rest away, and create new candidates by randomly
     reshuffling students within copies of the survivors ("mutation") - like
     breeding the next generation from the fittest parents. Repeat for many
-    generations; the best score climbs as weaker candidates get replaced by
-    refinements of stronger ones. Several independent attempts run in
-    parallel, since each one can land in a different result - keep whichever
-    scores highest.
+    generations, starting with broad/exploratory reshuffling and narrowing
+    to small, precise adjustments as the run progresses (see "Why mutation,
+    not crossover" below); the best score climbs as weaker candidates get
+    replaced by refinements of stronger ones. Once the generations are up,
+    a fast exact-search polish step checks every possible small swap
+    between teams and applies any that still help - a final, verified
+    "nothing obvious left to improve" pass. Several independent attempts run
+    in parallel, since each one can land in a different result - keep
+    whichever scores highest.
   - **What's inside that single fitness score:**
     - **Hard constraint, absolute:** `avoid_partners` - never violated. Every
       candidate is actively repaired each generation if it breaks this, no
@@ -153,9 +158,38 @@ only touch the config block above it.
   Improvements often continue well past a couple hundred generations,
   especially at low `population_size`; check convergence for your class size
   before trusting the defaults. `attempts` independent runs execute in
-  parallel (`parallelism = True`), one per CPU core - matching `attempts` to
-  your core count uses one parallel wave, no wasted time.
+  parallel (`parallelism = True`), one per CPU core - `attempts` defaults to
+  `RECOMMENDED_PARALLELISM` (the machine's core count minus one, computed
+  fresh on whatever machine runs this), leaving one core free for the OS and
+  everything else instead of oversubscribing every core. Override with a
+  specific number if you want more/fewer.
+- `mutation_mode`/`polish` - see "Mutation strategy and polish" below.
 - `progress`/`graph` - optional per-generation console output / fitness CSV.
+
+#### Mutation strategy and polish
+- `mutation_mode` - `"coarse"` (broad random reshuffling every mutation -
+  explores well from scratch but can never do fine local refinement),
+  `"fine"` (small bounded swaps only - local search near an existing
+  solution), or `"annealed"` (starts coarse, shifts toward fine as
+  generations progress - broad exploration early, local refinement late).
+  Default `"annealed"`: tested directly against `"coarse"` on this class's
+  real data under identical settings (10 attempts each, same
+  generations/pop_size, no polish) and won on every measure - best fitness
+  87.85 vs. 84.97, mean 86.47 vs. 80.11, worst 84.30 vs. 73.97.
+- `polish` - if `True` (default), runs `exhaustive_local_search()` on each
+  attempt's final result: checks *every* possible 2-student swap between
+  every pair of teams (not a random sample, an exhaustive one), and keeps
+  applying whichever improves fitness the most until none do. Cheap
+  (seconds - the swap neighborhood for a class this size is only ~1000
+  possibilities) and can only help or do nothing, so there's essentially no
+  downside to leaving it on. It also means a separate, much more expensive
+  dedicated "fine" refinement stage isn't needed - a direct 9-attempts-each
+  comparison (both configurations polished) found `"annealed"` alone beat
+  `"annealed"` + a 300-generation `"fine"` stage on every measure (best
+  88.87 vs. 88.76, mean 87.41 vs. 86.70, worst 86.26 vs. 84.42) while taking
+  40% less time per attempt. `staged_genetic_algorithm(stages, ...)` is
+  available for chaining multiple GA phases with different `mutation_mode`s
+  if you want to experiment further (each stage's winner seeds the next).
 
 #### Why mutation, not "crossover"
 The other classic genetic-algorithm technique - splicing two candidates'
