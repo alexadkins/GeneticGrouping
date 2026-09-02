@@ -1,7 +1,18 @@
-import random, json, math
+import random, json, math, os
 import numpy as np
 import pandas as pd
 from multiprocessing import Pool
+
+# Recommended worker-process count for any parallel batch in this project:
+# one less than the machine's core count, not the full count. Matching
+# `attempts`/`processes` exactly to the core count leaves no headroom for
+# the OS, the parent process orchestrating the Pool, or anything else
+# running on the machine - each worker then competes for CPU time instead
+# of getting uncontended use of its own core, which in practice makes both
+# the batch job AND the rest of the machine slower/jankier. Recomputed
+# fresh on every run, so it's correct on whatever machine actually runs
+# this - never hardcode a specific core count.
+RECOMMENDED_PARALLELISM = max(1, (os.cpu_count() or 4) - 1)
 
 # CSV file names
 input_csv = "3720F26SurveyData_prepared.csv"
@@ -29,7 +40,7 @@ enforce_even_teams = True
 # longer runtime to spare; diminishing returns set in well past this point.
 generations = 1000        #Number of generations (preference of 1000 because I'm extra)
 population_size = 40       #Number of "classes" (populations) of groups
-attempts = 10              #Number of times to re-run generation and produce output - matches this machine's 10 cores, so all attempts run in one parallel wave
+attempts = RECOMMENDED_PARALLELISM  #Number of times to re-run generation and produce output - defaults to (cores - 1) on whatever machine runs this, so all attempts run in one parallel wave without starving the rest of the machine. Override with a specific number if you want more/fewer.
 
 # Run controls
 parallelism = True     # Run all attempts in parallel with multiprocessing (DO NOT USE WITH PROGRESS)
