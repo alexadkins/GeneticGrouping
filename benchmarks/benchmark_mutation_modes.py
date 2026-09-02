@@ -1,12 +1,17 @@
 import csv
+import os
+import sys
 import time
 from multiprocessing import Pool
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # project root, so genetic_grouping/pair_teams/local_semester_config resolve regardless of cwd
 import genetic_grouping as g
 
 GENERATIONS = 1000
 POP_SIZE = 40
-ATTEMPTS_PER_MODE = 3
+# 4 configurations run at once (3 random-start modes + 1 seeded), so divide
+# the machine's recommended parallelism across all 4 rather than per-mode.
+ATTEMPTS_PER_MODE = max(1, g.RECOMMENDED_PARALLELISM // 4)
 
 def run_random_start(args):
     mode, attempt_id = args

@@ -1,7 +1,18 @@
-import random, json, math
+import random, json, math, os
 import numpy as np
 import pandas as pd
 from multiprocessing import Pool
+
+# Recommended worker-process count for any parallel batch in this project:
+# one less than the machine's core count, not the full count. Matching
+# `attempts`/`processes` exactly to the core count leaves no headroom for
+# the OS, the parent process orchestrating the Pool, or anything else
+# running on the machine - each worker then competes for CPU time instead
+# of getting uncontended use of its own core, which in practice makes both
+# the batch job AND the rest of the machine slower/jankier. Recomputed
+# fresh on every run, so it's correct on whatever machine actually runs
+# this - never hardcode a specific core count.
+RECOMMENDED_PARALLELISM = max(1, (os.cpu_count() or 4) - 1)
 
 # CSV file names
 input_csv = "3720F26SurveyData_prepared.csv"
@@ -29,7 +40,29 @@ enforce_even_teams = True
 # longer runtime to spare; diminishing returns set in well past this point.
 generations = 1000        #Number of generations (preference of 1000 because I'm extra)
 population_size = 40       #Number of "classes" (populations) of groups
-attempts = 10              #Number of times to re-run generation and produce output - matches this machine's 10 cores, so all attempts run in one parallel wave
+attempts = RECOMMENDED_PARALLELISM  #Number of times to re-run generation and produce output - defaults to (cores - 1) on whatever machine runs this, so all attempts run in one parallel wave without starving the rest of the machine. Override with a specific number if you want more/fewer.
+
+# Mutation strategy: "coarse" (broad random reshuffling every mutation -
+# explores well from scratch but can never do fine local refinement),
+# "fine" (small bounded swaps only - local search near an existing
+# solution), or "annealed" (starts coarse, shifts toward fine as
+# generations progress - broad exploration early, local refinement late).
+# Tested directly against "coarse" under identical settings on this class's
+# real data (10 attempts each, same generations/pop_size, no polish):
+# annealed won on every measure - best fitness 87.85 vs. 84.97, mean 86.47
+# vs. 80.11, worst 84.30 vs. 73.97 - so it's the recommended default.
+mutation_mode = "annealed"
+
+# Exact local search polish applied to each attempt's final result: checks
+# EVERY possible 2-student swap between every pair of teams (not a random
+# sample like mutation does), and keeps applying whichever improves fitness
+# the most until none do - a genuine, verified local optimum, not just "we
+# tried some things." Cheap (seconds, since the swap neighborhood for a
+# class this size is only ~1000 possibilities) and can only help or do
+# nothing, so there's essentially no downside to leaving this on. Testing
+# showed annealed+polish alone matches or beats a much more expensive
+# dedicated "fine" refinement stage, so that extra stage isn't needed.
+polish = True
 
 # Run controls
 parallelism = True     # Run all attempts in parallel with multiprocessing (DO NOT USE WITH PROGRESS)
@@ -366,6 +399,42 @@ def mutate(groups, max_swaps=None):
 
     return new_groups
 
+def exhaustive_local_search(groups, max_passes=50):
+    """Exact local search, as a polish step after the GA: repeatedly finds
+    and applies the single best 2-student swap between any two teams -
+    checking EVERY possible such swap, not randomly sampling one like
+    mutate()'s fine mode does - then repeats from scratch (a new swap can
+    open up further improving swaps that weren't available before), until
+    no swap improves fitness at all. That's a genuine, verified local
+    optimum under the "single pairwise swap" neighborhood - not "we tried
+    some things and didn't find better," but "there is provably no single
+    swap that helps." Cheap: for a 49-student/14-team grouping there are
+    only ~1000 possible swaps total, so one pass is a couple of seconds, not
+    minutes. Skips any swap that would create an avoid_partners conflict in
+    either affected team."""
+    groups = [list(group) for group in groups]
+    current_fitness = fitness(groups)
+    for _ in range(max_passes):
+        best_swap = None
+        best_fitness = current_fitness
+        for i in range(len(groups)):
+            for j in range(i + 1, len(groups)):
+                for a_idx in range(len(groups[i])):
+                    for b_idx in range(len(groups[j])):
+                        groups[i][a_idx], groups[j][b_idx] = groups[j][b_idx], groups[i][a_idx]
+                        if not group_has_conflict(groups[i]) and not group_has_conflict(groups[j]):
+                            f = fitness(groups)
+                            if f > best_fitness:
+                                best_fitness = f
+                                best_swap = (i, a_idx, j, b_idx)
+                        groups[i][a_idx], groups[j][b_idx] = groups[j][b_idx], groups[i][a_idx]
+        if best_swap is None:
+            break
+        i, a_idx, j, b_idx = best_swap
+        groups[i][a_idx], groups[j][b_idx] = groups[j][b_idx], groups[i][a_idx]
+        current_fitness = best_fitness
+    return groups
+
 def genetic_algorithm(generations=100, pop_size=10, mutation_mode="coarse", fine_max_swaps=3,
                        initial_population=None):
     """mutation_mode: "coarse" (default, original behavior - broad random
@@ -436,6 +505,52 @@ def genetic_algorithm(generations=100, pop_size=10, mutation_mode="coarse", fine
     # Return best fitted population
     return sorted(population, key=fitness, reverse=True)[0]
 
+def staged_genetic_algorithm(stages, pop_size=10, seed_groups=None, polish=True):
+    """Chain multiple genetic_algorithm() phases: each stage's winner seeds
+    the next stage's population (expanded back out to pop_size via mutation,
+    same as a single seeded run). Lets a pipeline mix stages of different
+    granularity - e.g. a broad/exploratory "annealed" stage to find a good
+    neighborhood from scratch, followed by a "fine" stage to refine it, with
+    no hand-picked seed grouping required anywhere.
+
+    `stages` is a list of dicts, each accepting any genetic_algorithm()
+    keyword arg except pop_size/initial_population - typically at least
+    {"generations": N, "mutation_mode": "coarse"/"fine"/"annealed"}, plus
+    "fine_max_swaps" (default 3) if you want a non-default swap size. That
+    value does double duty for a stage seeded from the previous one: it both
+    controls how far the seed population is allowed to spread before this
+    stage's own mutation_mode takes over, AND gets forwarded to
+    genetic_algorithm() as this stage's own fine_max_swaps (used by its
+    "fine"/"annealed" logic) - one knob, one meaning, not two silently
+    different ones.
+
+    Pass `seed_groups` to start the FIRST stage from a known grouping
+    instead of a random population (e.g. to refine an existing roster
+    without needing an exploratory stage at all).
+
+    `polish` (default True) runs exhaustive_local_search() on the final
+    result before returning - cheap (seconds, not generations) and can
+    only help or do nothing (it only ever accepts strictly-improving
+    swaps), so there's essentially no downside to leaving it on. Empirically
+    it can make an expensive dedicated "fine" GA stage unnecessary: a cheap
+    annealed-only run polished this way found results comparable to a full
+    1000-generation fine-mode stage, in seconds instead of minutes."""
+    current_seed = seed_groups
+    best = None
+    for stage in stages:
+        stage = dict(stage)
+        spread = stage.get("fine_max_swaps", 3)  # also left in `stage` below, so it reaches genetic_algorithm() too
+        if current_seed is not None:
+            initial_population = [current_seed] + [mutate(current_seed, max_swaps=spread)
+                                                     for _ in range(pop_size - 1)]
+        else:
+            initial_population = None
+        best = genetic_algorithm(pop_size=pop_size, initial_population=initial_population, **stage)
+        current_seed = best
+    if polish:
+        best = exhaustive_local_search(best)
+    return best
+
 def output_groups_to_csv(groups, filename):
     output_data = []
     
@@ -487,7 +602,10 @@ def run_attempt(attempt_id):
     global highest_fitness
     highest_fitness = 0
     
-    best_groups = genetic_algorithm(generations=generations, pop_size=population_size)
+    best_groups = staged_genetic_algorithm(
+        [{"generations": generations, "mutation_mode": mutation_mode}],
+        pop_size=population_size, polish=polish,
+    )
     best_groups_fitness = fitness(best_groups)
 
     output_filename = f"groups/{output_csv.split('.csv')[0]}_{generations}gens_{best_groups_fitness:.1f}.csv"

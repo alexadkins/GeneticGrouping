@@ -1,16 +1,19 @@
-"""(b) Fresh from-scratch production batch using mutation_mode="annealed"
-instead of the default "coarse", to see if it beats the existing 85.0
-coarse-mode best as a from-scratch Option 2 candidate. Mirrors
-genetic_grouping.py's run_attempt()/__main__ flow but doesn't touch the
-main config block, since annealed mode isn't adopted as the default yet."""
+"""Fresh from-scratch production batch explicitly forcing mutation_mode=
+"annealed" - useful for reproducing/re-checking the annealed-vs-coarse
+comparison in isolation, independent of whatever genetic_grouping.py's own
+config block currently defaults to (annealed + polish, as of this writing -
+see README's "Mutation strategy and polish")."""
+import os
+import sys
 import time
 from multiprocessing import Pool
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # project root, so genetic_grouping/pair_teams/local_semester_config resolve regardless of cwd
 import genetic_grouping as g
 
 GENERATIONS = 1000
 POP_SIZE = 40
-ATTEMPTS = 10
+ATTEMPTS = g.RECOMMENDED_PARALLELISM
 
 def run_attempt(attempt_id):
     g.highest_fitness = 0

@@ -3,14 +3,17 @@ a fitness number - reruns the seeded+fine experiment (seed = Option 4's
 roster), keeps the best of several attempts, and saves it via the normal
 output_groups_to_csv() so it can be evaluated/used like any other candidate."""
 import csv
+import os
+import sys
 import time
 from multiprocessing import Pool
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # project root, so genetic_grouping/pair_teams/local_semester_config resolve regardless of cwd
 import genetic_grouping as g
 
 GENERATIONS = 1000
 POP_SIZE = 40
-ATTEMPTS = 5
+ATTEMPTS = g.RECOMMENDED_PARALLELISM
 
 def load_roster(path):
     teams = {}
